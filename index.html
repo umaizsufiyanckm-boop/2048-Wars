@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2048 Wars | Umaiz Sufiyan</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        :root {
+            --bg: #0b0b0e; --panel: #16161d; --text: #ffffff; --primary: #ff4757;
+            --p1: #ff4757; --p2: #2ed573; --p3: #1e90ff; --p4: #ffa502;
+            --sidebar-width: 300px;
+        }
+        body.light-theme { --bg: #f4f7f6; --panel: #ffffff; --text: #2d3436; --primary: #e84393; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Orbitron', 'Segoe UI', sans-serif; }
+        body { background-color: var(--bg); color: var(--text); transition: 0.3s; overflow: hidden; display: flex; height: 100vh; }
+
+        /* --- SIDEBAR --- */
+        #sidebar {
+            position: fixed; left: calc(-1 * var(--sidebar-width)); top: 0;
+            width: var(--sidebar-width); height: 100%; background: var(--panel);
+            box-shadow: 10px 0 30px rgba(0,0,0,0.6); z-index: 5000;
+            transition: left 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); 
+            padding: 25px; display: flex; flex-direction: column;
+        }
+        #sidebar.open { left: 0; }
+        .sidebar-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 4999; }
+        .sidebar-overlay.active { display: block; }
+        .sidebar-btn { position: fixed; left: 20px; top: 20px; z-index: 1001; background: var(--primary); color: white; border: none; padding: 12px 18px; border-radius: 8px; cursor: pointer; font-weight: bold; border-bottom: 3px solid rgba(0,0,0,0.2); }
+
+        /* --- STYLIZED INPUTS --- */
+        .input-group { position: relative; margin: 20px 0; width: 100%; }
+        input[type="text"] {
+            width: 100%; padding: 15px; background: rgba(255,255,255,0.05);
+            border: 2px solid #333; border-radius: 12px; color: white;
+            font-size: 1rem; outline: none; transition: 0.3s; text-align: center;
+        }
+        input[type="text"]:focus { border-color: var(--primary); box-shadow: 0 0 15px rgba(255, 71, 87, 0.4); background: rgba(255,255,255,0.08); }
+
+        /* --- CODE DISPLAY BOX --- */
+        .code-badge {
+            background: #1e272e; border: 2px dashed var(--primary);
+            padding: 20px; border-radius: 12px; margin: 15px 0;
+            position: relative; overflow: hidden;
+        }
+        .code-text { font-family: monospace; font-size: 1.1rem; color: #00d8ff; letter-spacing: 1px; font-weight: bold; word-break: break-all; }
+        .copy-hint { font-size: 0.6rem; color: #888; margin-top: 5px; text-transform: uppercase; }
+
+        /* --- UI COMPONENTS --- */
+        .screen { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; }
+        .hidden { display: none !important; }
+        .card { background: var(--panel); padding: 40px; border-radius: 28px; width: 95%; max-width: 420px; text-align: center; box-shadow: 0 25px 50px rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.05); }
+        .main-btn { width: 100%; padding: 16px; margin-top: 12px; border: none; border-radius: 14px; background: var(--primary); color: white; font-weight: bold; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 1px; }
+        .main-btn:hover { filter: brightness(1.2); transform: translateY(-2px); }
+        .main-btn.alt { background: transparent; border: 2px solid #444; color: var(--text); }
+        .danger-btn { background: #ff3f34 !important; }
+
+        /* --- GAME GRID --- */
+        .grid { display: grid; grid-template-columns: repeat(4, 75px); grid-template-rows: repeat(4, 75px); gap: 10px; background: #2c3e50; padding: 12px; border-radius: 18px; border: 4px solid #1a252f; position: relative; }
+        .cell { width: 75px; height: 75px; background: var(--bg); border-radius: 10px; display: flex; justify-content: center; align-items: center; font-weight: 800; font-size: 1.4rem; transition: 0.1s; cursor: pointer; }
+        .p1-tile { background: var(--p1); color: white; box-shadow: inset 0 0 10px rgba(0,0,0,0.2); }
+        .p2-tile { background: var(--p2); color: white; }
+        .p3-tile { background: var(--p3); color: white; }
+        .p4-tile { background: var(--p4); color: white; }
+
+        /* --- RESULT OVERLAY --- */
+        #result-overlay { position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.85); border-radius: 18px; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; backdrop-filter: blur(5px); }
+
+        .sig { margin-top: 25px; font-weight: bold; color: var(--primary); letter-spacing: 3px; text-transform: uppercase; font-size: 0.75rem; opacity: 0.9; }
+        
+        .toggle-container { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; }
+    </style>
+</head>
+<body onload="checkUser()">
+    <button class="sidebar-btn" onclick="toggleSidebar()">☰ MENU</button>
+    <div class="sidebar-overlay" id="overlay" onclick="toggleSidebar()"></div>
+
+    <div id="sidebar">
+        <h2 style="margin-bottom: 20px; color: var(--primary); font-size: 1.2rem;">COMMAND CENTER</h2>
+        
+        <div class="toggle-container">
+            <label style="font-size: 0.7rem; color: #888;">MUSIC STATUS</label>
+            <button id="musicToggle" onclick="toggleMusic()" style="background: #333; color: white; border: none; padding: 5px 10px; border-radius: 5px; font-size: 0.6rem; cursor: pointer;">OFF</button>
+        </div>
+
+        <label style="font-size: 0.7rem; color: #888;">THEME SELECTION</label>
+        <select id="themeSelect" onchange="applyTheme()" style="width:100%; padding:12px; background:var(--bg); color:var(--text); border:1px solid #444; border-radius:8px; margin-bottom: 20px;">
+            <option value="dark">NEON DARK</option>
+            <option value="light">CLEAN LIGHT</option>
+        </select>
+
+        <h3 style="font-size: 0.9rem; margin-bottom: 10px;">TACTICAL CHAT</h3>
+        <div id="chat-box" style="flex:1; display:flex; flex-direction:column; background:rgba(0,0,0,0.2); border-radius:12px; padding:10px; border:1px solid #333;">
+            <div id="chat-logs" style="flex:1; overflow-y:auto; font-size:0.8rem; color:#bbb; margin-bottom: 5px;"></div>
+            <div style="display: flex; gap: 5px;">
+                <input type="text" id="chat-input" placeholder="Message..." onkeypress="if(event.key==='Enter')sendChat()" style="flex:1; padding:8px; border-radius:8px; font-size:0.7rem; background: #000; border: 1px solid #444; color: white;">
+                <button onclick="sendChat()" style="background: var(--primary); border:none; color:white; padding: 0 10px; border-radius: 8px; cursor: pointer;">➤</button>
+            </div>
+        </div>
+
+        <button class="main-btn alt" style="margin-top: 20px;" onclick="location.reload()">MAIN MENU</button>
+        <button class="main-btn danger-btn" onclick="clearAllData()">WIPE ALL DATA</button>
+        
+        <div style="margin-top: auto; text-align: center; padding-top: 15px; border-top: 1px solid #333;">
+            <p style="font-size: 0.6rem; opacity: 0.6;">V.2.0.48 STABLE</p>
+            <p style="font-weight: bold; color: var(--primary); font-size: 0.8rem;">UMAIZ SUFIYAN</p>
+        </div>
+    </div>
+
+    <div class="screen" id="user-screen">
+        <div class="card">
+            <h1 style="letter-spacing: 5px; margin-bottom: 10px;">2048<span style="color:var(--primary)">WARS</span></h1>
+            <p style="font-size: 0.7rem; color: #888; margin-bottom: 20px;">ESTABLISH YOUR PILOT IDENTITY</p>
+            <div class="input-group">
+                <input type="text" id="usernameInput" placeholder="TYPE CODENAME...">
+            </div>
+            <button class="main-btn" onclick="saveUser()">INITIALIZE SYSTEM</button>
+            <div class="sig">Umaiz Sufiyan</div>
+        </div>
+    </div>
+
+    <div class="screen hidden" id="menu-screen">
+        <div class="card">
+            <h2 id="welcomeText" style="margin-bottom: 25px; color: var(--primary);"></h2>
+            <button class="main-btn" onclick="startGame('ai')">SINGLE PLAYER [AI]</button>
+            <button class="main-btn" onclick="startGame('2p')">LOCAL BATTLE [2P]</button>
+            <button class="main-btn" onclick="startGame('4p')">CHAOS MODE [4P]</button>
+            <button class="main-btn alt" onclick="showOnlineLobby()">QUANTUM MULTIPLAYER</button>
+            <div class="sig">Umaiz Sufiyan</div>
+        </div>
+    </div>
+
+    <div class="screen hidden" id="online-screen">
+        <div class="card">
+            <h2 style="margin-bottom: 5px;">MULTIPLAYER</h2>
+            <p id="net-status" style="font-size: 0.7rem; color: #ffbc00; margin-bottom: 20px;">● INITIALIZING GRID...</p>
+            <button class="main-btn" id="genBtn" onclick="generateCode()" disabled>ESTABLISH NEW LINK</button>
+            <div id="inviteArea" class="hidden">
+                <div class="code-badge">
+                    <div class="code-text" id="displayCode">---- ----</div>
+                    <div class="copy-hint">SHARE THIS ACCESS KEY WITH FRIEND</div>
+                </div>
+            </div>
+            <div style="margin: 20px 0; border-top: 1px solid #333; position: relative;">
+                <span style="position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: var(--panel); padding: 0 10px; font-size: 0.7rem; color: #666;">OR</span>
+            </div>
+            <input type="text" id="joinInput" placeholder="ENTER ACCESS KEY">
+            <button class="main-btn alt" onclick="connectPeer()">INTERCEPT LINK</button>
+        </div>
+    </div>
+
+    <div class="screen hidden" id="game-screen">
+        <div style="text-align: center; margin-bottom: 15px;">
+            <h2 id="turnDisplay" style="text-shadow: 0 0 10px rgba(255,255,255,0.2);">AWAITING TURN</h2>
+            <p id="timerDisplay" style="font-size: 0.8rem; opacity: 0.7; font-family: monospace;">TIME: 00:00</p>
+        </div>
+        <div class="grid" id="game-grid">
+            <div id="result-overlay" class="hidden">
+                <h2 id="result-text" style="color: var(--primary); margin-bottom: 15px;"></h2>
+                <button class="main-btn" style="width: 80%" onclick="initBoard()">RESTART</button>
+                <button class="main-btn alt" style="width: 80%" onclick="location.reload()">MENU</button>
+            </div>
+        </div>
+        <div class="sig">Umaiz Sufiyan</div>
+    </div>
+
+<script>
+    let peer, conn, myId, currentUser, timerInterval, time = 0;
+    let board = [], mode = '2p', currentTurn = 1, isOnline = false, myRole = 1;
+    let musicOn = false, musicNode = null;
+
+    // --- ENHANCED SOUND SYSTEM ---
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
+    function playSound(freq, type = 'sine', duration = 0.1, vol = 0.1) {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+    }
+
+    function toggleMusic() {
+        const btn = document.getElementById('musicToggle');
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        
+        if (!musicOn) {
+            musicOn = true;
+            btn.innerText = "ON";
+            btn.style.background = "var(--p2)";
+            startMusicLoop();
+        } else {
+            musicOn = false;
+            btn.innerText = "OFF";
+            btn.style.background = "#333";
+            if(musicNode) musicNode.stop();
+        }
+    }
+
+    function startMusicLoop() {
+        if (!musicOn) return;
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(55, now); // Low bass pulse
+        gain.gain.setValueAtTime(0.02, now);
+        gain.gain.setTargetAtTime(0, now + 0.4, 0.1);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(now);
+        osc.stop(now + 0.5);
+        musicNode = osc;
+        setTimeout(startMusicLoop, 800);
+    }
+
+    function toggleSidebar() { 
+        document.getElementById('sidebar').classList.toggle('open'); 
+        document.getElementById('overlay').classList.toggle('active');
+    }
+
+    function applyTheme() { 
+        document.body.className = document.getElementById('themeSelect').value === 'light' ? 'light-theme' : ''; 
+    }
+
+    function clearAllData() {
+        if(confirm("PROTOCOL ALERT: Wipe all Pilot Data?")) {
+            localStorage.clear();
+            location.reload();
+        }
+    }
+
+    function checkUser() {
+        const u = localStorage.getItem('2048_u');
+        if(u) { currentUser = u; showMenu(); }
+    }
+
+    function saveUser() {
+        const v = document.getElementById('usernameInput').value.trim();
+        if(!v) return;
+        localStorage.setItem('2048_u', v);
+        currentUser = v; showMenu();
+        playSound(440, 'square');
+    }
+
+    function showMenu() {
+        document.getElementById('user-screen').classList.add('hidden');
+        document.getElementById('menu-screen').classList.remove('hidden');
+        document.getElementById('welcomeText').innerText = "UNIT: " + currentUser.toUpperCase();
+    }
+
+    function sendChat() {
+        const i = document.getElementById('chat-input');
+        const msg = i.value.trim();
+        if(!msg) return;
+        addChat("YOU", msg);
+        if(isOnline && conn && conn.open) {
+            conn.send({ type: 'CHAT', u: currentUser, m: msg });
+        }
+        i.value = '';
+    }
+
+    function addChat(u, m) {
+        const l = document.getElementById('chat-logs');
+        l.innerHTML += `<div style="margin-bottom:5px;"><b>[${u.toUpperCase()}]:</b> ${m}</div>`;
+        l.scrollTop = l.scrollHeight;
+    }
+
+    // --- ONLINE LOGIC FIXES ---
+    function showOnlineLobby() {
+        document.getElementById('menu-screen').classList.add('hidden');
+        document.getElementById('online-screen').classList.remove('hidden');
+        peer = new Peer();
+        peer.on('open', id => { 
+            myId = id; 
+            document.getElementById('net-status').innerText = "● GRID READY"; 
+            document.getElementById('net-status').style.color = "#2ed573";
+            document.getElementById('genBtn').disabled = false; 
+        });
+        peer.on('connection', c => { 
+            conn = c; 
+            myRole = 1; 
+            isOnline = true; 
+            setupConn(); 
+        });
+    }
+
+    function generateCode() { 
+        document.getElementById('displayCode').innerText = myId; 
+        document.getElementById('inviteArea').classList.remove('hidden'); 
+    }
+
+    function connectPeer() { 
+        const id = document.getElementById('joinInput').value.trim(); 
+        if(!id) return;
+        conn = peer.connect(id); 
+        myRole = 2; 
+        isOnline = true; 
+        setupConn(); 
+    }
+
+    function setupConn() {
+        conn.on('open', () => {
+            document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+            document.getElementById('game-screen').classList.remove('hidden');
+            addChat("SYSTEM", "LINK ESTABLISHED");
+            playSound(1000, 'square', 0.2);
+            
+            // FIX: Both players must initialize the UI elements
+            initBoard(); 
+        });
+        conn.on('data', d => {
+            if(d.type === 'SYNC') { 
+                board = d.b; 
+                currentTurn = d.t; 
+                updateUI(); 
+                if(d.w) endGame(d.w);
+            }
+            if(d.type === 'CHAT') {
+                addChat(d.u, d.m);
+                playSound(500, 'sine', 0.1);
+            }
+        });
+    }
+
+    function startGame(m) {
+        mode = m; isOnline = false;
+        document.getElementById('menu-screen').classList.add('hidden');
+        document.getElementById('game-screen').classList.remove('hidden');
+        initBoard();
+    }
+
+    function initBoard() {
+        document.getElementById('result-overlay').classList.add('hidden');
+        const g = document.getElementById('game-grid');
+        const cells = g.querySelectorAll('.cell');
+        cells.forEach(c => c.remove());
+
+        board = Array(4).fill(null).map(() => Array(4).fill(null));
+        currentTurn = 1;
+        time = 0; 
+        clearInterval(timerInterval);
+        timerInterval = setInterval(() => {
+            time++;
+            let m = Math.floor(time/60).toString().padStart(2,'0'), s = (time%60).toString().padStart(2,'0');
+            document.getElementById('timerDisplay').innerText = `TIME: ${m}:${s}`;
+        }, 1000);
+
+        for(let r=0; r<4; r++) {
+            for(let c=0; c<4; c++) {
+                const cl = document.createElement('div'); cl.className = 'cell';
+                cl.onclick = () => handleInput(r, c); 
+                g.appendChild(cl);
+            }
+        }
+        updateUI();
+        if(isOnline && myRole === 1) sync();
+    }
+
+    function handleInput(r, c) {
+        if(isOnline && currentTurn !== myRole) return;
+        if(board[r][c]) return;
+
+        playSound(300 + (currentTurn * 100), 'triangle', 0.05);
+        
+        let val = 2;
+        [[r-1,c],[r+1,c],[r,c-1],[r,c+1]].forEach(([nr,nc]) => {
+            if(nr>=0 && nr<4 && nc>=0 && nc<4 && board[nr][nc] && board[nr][nc].v === val) {
+                board[nr][nc] = null; val *= 2;
+                playSound(800, 'sine', 0.1);
+            }
+        });
+
+        board[r][c] = { v: val, p: currentTurn };
+        
+        let winR = (val >= 2048) ? `PILOT ${currentTurn} HIT 2048!` : (checkWin(currentTurn) ? `PILOT ${currentTurn} CONNECT 4!` : null);
+        if(!winR && board.flat().every(cell => cell !== null)) winR = "STALEMATE: GRID FULL";
+
+        let nextT = currentTurn + 1;
+        let limit = (mode === '4p') ? 4 : 2;
+        if(nextT > limit) nextT = 1;
+
+        currentTurn = nextT;
+        updateUI();
+
+        if(isOnline) sync(winR);
+        if(winR) endGame(winR);
+        else if(mode === 'ai' && currentTurn === 2) setTimeout(aiMove, 600);
+    }
+
+    function sync(winR = null) {
+        if(conn && conn.open) {
+            conn.send({ type: 'SYNC', b: board, t: currentTurn, w: winR });
+        }
+    }
+
+    function aiMove() {
+        let empty = [];
+        for(let r=0; r<4; r++) for(let c=0; c<4; c++) if(!board[r][c]) empty.push({r,c});
+        if(empty.length) { 
+            const m = empty[Math.floor(Math.random()*empty.length)]; 
+            handleInput(m.r, m.c); 
+        }
+    }
+
+    function updateUI() {
+        const cells = document.querySelectorAll('.cell');
+        board.flat().forEach((t, i) => {
+            cells[i].innerText = t ? t.v : '';
+            cells[i].className = 'cell' + (t ? ` p${t.p}-tile` : '');
+        });
+        document.getElementById('turnDisplay').innerText = "PLAYER " + currentTurn + " ACTIVE";
+        document.getElementById('turnDisplay').style.color = `var(--p${currentTurn})`;
+    }
+
+    function checkWin(p) {
+        for(let i=0; i<4; i++) {
+            if(board[i].every(c => c && c.p === p)) return true;
+            if([0,1,2,3].every(r => board[r][i] && board[r][i].p === p)) return true;
+        }
+        if([0,1,2,3].every(i => board[i][i] && board[i][i].p === p)) return true;
+        if([0,1,2,3].every(i => board[i][3-i] && board[i][3-i].p === p)) return true;
+        return false;
+    }
+
+    function endGame(msg) {
+        clearInterval(timerInterval);
+        const overlay = document.getElementById('result-overlay');
+        const resText = document.getElementById('result-text');
+        resText.innerText = msg;
+        overlay.classList.remove('hidden');
+        playSound(1200, 'square', 0.5);
+    }
+</script>
+</body>
+</html>
